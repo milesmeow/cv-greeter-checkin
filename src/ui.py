@@ -295,7 +295,8 @@ class CheckInUI:
             ttk.Label(
                 frame,
                 text=f"Recognized: {recognized_name}",
-                font=('Helvetica', 16, 'bold')
+                font=('Helvetica', 16, 'bold'),
+                foreground='green'
             ).pack(pady=(0, 15))
 
             # OK button
@@ -329,8 +330,9 @@ class CheckInUI:
             # NOT RECOGNIZED FLOW
             ttk.Label(
                 frame,
-                text="New Visitor",
-                font=('Helvetica', 16, 'bold')
+                text="Not Recognized",
+                font=('Helvetica', 16, 'bold'),
+                foreground='red'
             ).pack(pady=(0, 10))
 
             ttk.Label(

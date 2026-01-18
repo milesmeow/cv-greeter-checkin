@@ -87,6 +87,22 @@ python main.py
 
 If dlib fails to build on Windows, try: `pip install dlib --prefer-binary` or use Conda as described in the macOS section.
 
+## Running the Application
+
+Once dependencies are installed, start the application with:
+
+```bash
+# Activate your environment first (if using conda)
+conda activate visitor-checkin
+
+# Or if using venv
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+
+# Run the app
+python main.py
+```
+
 ## Project Structure
 
 ```

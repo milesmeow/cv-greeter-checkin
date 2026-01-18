@@ -725,7 +725,7 @@ class CheckInHistoryDialog:
         for checkin in reversed(checkins):
             # Format time from timestamp
             time_str = self._format_time(checkin['timestamp'])
-            check_type = "Recognized" if checkin['recognized'] else "New Registration"
+            check_type = "Check In" if checkin['recognized'] else "Registered"
 
             self.tree.insert('', tk.END, values=(
                 time_str,

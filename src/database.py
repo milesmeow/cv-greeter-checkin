@@ -220,7 +220,7 @@ class AttendanceLogger:
                         "timestamp": parts[0],
                         "visitor_id": int(parts[1]),
                         "visitor_name": parts[2],
-                        "recognized": parts[3] == "true"
+                        "recognized": parts[3].lower() == "true"
                     })
         
         return checkins

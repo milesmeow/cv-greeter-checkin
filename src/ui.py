@@ -93,9 +93,25 @@ class CheckInUI:
     
     def _build_ui(self):
         """Construct all UI elements."""
-        # Create canvas with scrollbar for scrollable content
-        canvas = tk.Canvas(self.root)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        # Two-column layout: main content (centered) + admin sidebar (right)
+        content_frame = ttk.Frame(self.root)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Right sidebar for admin button
+        sidebar = ttk.Frame(content_frame, padding=10)
+        sidebar.pack(side=tk.RIGHT, fill=tk.Y, anchor=tk.N)
+
+        self.admin_btn = ttk.Button(
+            sidebar,
+            text="Manage\nVisitors",
+            style='Register.TButton',
+            command=self._show_admin_dialog
+        )
+        self.admin_btn.pack(anchor=tk.N)
+
+        # Create canvas with scrollbar for scrollable main content
+        canvas = tk.Canvas(content_frame)
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)
 
         # Main container with padding (inside canvas)
         main_frame = ttk.Frame(canvas, padding=20)
@@ -125,26 +141,13 @@ class CheckInUI:
             style='Header.TLabel'
         )
         header.pack()
-        
-        # Camera row (camera + admin button on the right)
-        camera_row = ttk.Frame(main_frame)
-        camera_row.pack(pady=10)
 
         # Camera preview frame
-        self.camera_frame = ttk.Frame(camera_row, relief='sunken', borderwidth=2)
-        self.camera_frame.pack(side=tk.LEFT)
+        self.camera_frame = ttk.Frame(main_frame, relief='sunken', borderwidth=2)
+        self.camera_frame.pack(pady=10)
 
         self.camera_label = ttk.Label(self.camera_frame)
         self.camera_label.pack()
-
-        # Manage Visitors button (to the right of camera)
-        self.admin_btn = ttk.Button(
-            camera_row,
-            text="Manage\nVisitors",
-            style='Register.TButton',
-            command=self._show_admin_dialog
-        )
-        self.admin_btn.pack(side=tk.LEFT, padx=(10, 0), anchor=tk.N)
 
         # Placeholder for camera
         self._show_placeholder()

@@ -42,7 +42,9 @@ class CheckInApp:
         # Initialize UI with callbacks
         self.ui = CheckInUI(
             on_checkin=self.handle_checkin,
-            on_close=self.handle_close
+            on_close=self.handle_close,
+            on_get_visitors=self.get_visitors,
+            on_delete_visitor=self.delete_visitor
         )
         
         # Start camera
@@ -183,7 +185,32 @@ class CheckInApp:
         """Clean up when the application closes."""
         print("Shutting down...")
         self.camera.stop()
-    
+
+    def get_visitors(self) -> list:
+        """
+        Get all registered visitors for admin display.
+
+        Returns:
+            List of visitor dictionaries with id, name, created_at, last_seen, visit_count
+        """
+        return self.database.get_all_visitors()
+
+    def delete_visitor(self, visitor_id: int) -> bool:
+        """
+        Delete a visitor from the database.
+
+        Args:
+            visitor_id: The visitor's database ID
+
+        Returns:
+            True if deleted successfully
+        """
+        result = self.database.delete_visitor(visitor_id)
+        if result:
+            self._update_stats()
+            print(f"Deleted visitor ID: {visitor_id}")
+        return result
+
     def run(self):
         """Start the application."""
         print("Starting UI...")

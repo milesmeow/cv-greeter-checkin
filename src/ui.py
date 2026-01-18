@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import numpy as np
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 from datetime import datetime
 
 
@@ -26,7 +26,9 @@ class CheckInUI:
     def __init__(
         self,
         on_checkin: Callable[[], None],
-        on_close: Callable[[], None]
+        on_close: Callable[[], None],
+        on_get_visitors: Callable[[], List[dict]] = None,
+        on_delete_visitor: Callable[[int], bool] = None
     ):
         """
         Initialize the UI.
@@ -34,9 +36,13 @@ class CheckInUI:
         Args:
             on_checkin: Callback when Check In button is clicked
             on_close: Callback when window is closed
+            on_get_visitors: Callback to get all registered visitors
+            on_delete_visitor: Callback to delete a visitor by ID
         """
         self.on_checkin = on_checkin
         self.on_close = on_close
+        self.on_get_visitors = on_get_visitors
+        self.on_delete_visitor = on_delete_visitor
 
         # Create main window
         self.root = tk.Tk()
@@ -138,7 +144,16 @@ class CheckInUI:
             command=self._handle_checkin
         )
         self.checkin_btn.pack(pady=15)
-        
+
+        # Manage Visitors button
+        self.admin_btn = ttk.Button(
+            main_frame,
+            text="Manage Visitors",
+            style='Register.TButton',
+            command=self._show_admin_dialog
+        )
+        self.admin_btn.pack(pady=5)
+
         # Status display
         status_frame = ttk.Frame(main_frame, relief='groove', borderwidth=1)
         status_frame.pack(fill=tk.X, pady=10)
@@ -245,7 +260,16 @@ class CheckInUI:
         """Handle window close."""
         self.on_close()
         self.root.destroy()
-    
+
+    def _show_admin_dialog(self):
+        """Show the visitor management dialog."""
+        if self.on_get_visitors and self.on_delete_visitor:
+            AdminDialog(
+                parent=self.root,
+                on_get_visitors=self.on_get_visitors,
+                on_delete_visitor=self.on_delete_visitor
+            )
+
     def run(self):
         """Start the UI event loop."""
         self.root.mainloop()
@@ -380,3 +404,190 @@ class CheckInUI:
             text="Cancel",
             command=handle_cancel
         ).pack(pady=(15, 0))
+
+
+class AdminDialog:
+    """
+    Modal dialog for managing registered visitors.
+
+    Displays a list of visitors with details and allows deletion.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_get_visitors: Callable[[], List[dict]],
+        on_delete_visitor: Callable[[int], bool]
+    ):
+        """
+        Initialize the admin dialog.
+
+        Args:
+            parent: Parent window
+            on_get_visitors: Callback to get visitor list
+            on_delete_visitor: Callback to delete a visitor by ID
+        """
+        self.on_get_visitors = on_get_visitors
+        self.on_delete_visitor = on_delete_visitor
+
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Manage Visitors")
+        self.dialog.geometry("600x400")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Center over parent
+        self.dialog.geometry(f"+{parent.winfo_x() + 50}+{parent.winfo_y() + 100}")
+
+        self._build_ui()
+        self._load_visitors()
+
+    def _build_ui(self):
+        """Construct the dialog UI."""
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header
+        ttk.Label(
+            main_frame,
+            text="Registered Visitors",
+            font=('Helvetica', 14, 'bold')
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        # Treeview frame (for scrollbar)
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Create Treeview with columns
+        columns = ('id', 'name', 'registered', 'last_seen', 'visits')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+
+        # Define headings
+        self.tree.heading('id', text='ID')
+        self.tree.heading('name', text='Name')
+        self.tree.heading('registered', text='Registered')
+        self.tree.heading('last_seen', text='Last Seen')
+        self.tree.heading('visits', text='Visits')
+
+        # Define column widths
+        self.tree.column('id', width=40, anchor='center')
+        self.tree.column('name', width=180)
+        self.tree.column('registered', width=120)
+        self.tree.column('last_seen', width=120)
+        self.tree.column('visits', width=60, anchor='center')
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        # Pack tree and scrollbar
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind selection event
+        self.tree.bind('<<TreeviewSelect>>', self._on_select)
+
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=('Helvetica', 10),
+            foreground='gray'
+        )
+        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+
+        # Button frame
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        # Delete button (disabled by default)
+        self.delete_btn = ttk.Button(
+            btn_frame,
+            text="Delete Selected",
+            command=self._on_delete,
+            state=tk.DISABLED
+        )
+        self.delete_btn.pack(side=tk.LEFT)
+
+        # Close button
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT)
+
+    def _load_visitors(self):
+        """Load visitors from database and populate the Treeview."""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Get visitors
+        visitors = self.on_get_visitors()
+
+        # Populate treeview
+        for visitor in visitors:
+            self.tree.insert('', tk.END, values=(
+                visitor['id'],
+                visitor['name'],
+                self._format_date(visitor['created_at']),
+                self._format_date(visitor['last_seen']),
+                visitor['visit_count']
+            ))
+
+        # Update status
+        count = len(visitors)
+        self.status_label.configure(
+            text=f"Total: {count} visitor{'s' if count != 1 else ''}"
+        )
+
+        # Reset delete button state
+        self.delete_btn.configure(state=tk.DISABLED)
+
+    def _format_date(self, date_str: str) -> str:
+        """Format a database timestamp for display."""
+        if not date_str:
+            return "Never"
+        try:
+            dt = datetime.fromisoformat(date_str)
+            today = datetime.now().date()
+            if dt.date() == today:
+                return "Today"
+            elif (today - dt.date()).days == 1:
+                return "Yesterday"
+            else:
+                return dt.strftime("%b %d, %Y")
+        except (ValueError, TypeError):
+            return str(date_str)
+
+    def _on_select(self, event):
+        """Handle Treeview selection change."""
+        selected = self.tree.selection()
+        if selected:
+            self.delete_btn.configure(state=tk.NORMAL)
+        else:
+            self.delete_btn.configure(state=tk.DISABLED)
+
+    def _on_delete(self):
+        """Handle delete button click."""
+        selected = self.tree.selection()
+        if not selected:
+            return
+
+        # Get visitor info
+        item = self.tree.item(selected[0])
+        values = item['values']
+        visitor_id = values[0]
+        visitor_name = values[1]
+
+        # Confirm deletion
+        if messagebox.askyesno(
+            "Confirm Delete",
+            f"Are you sure you want to delete '{visitor_name}'?\n\nThis cannot be undone.",
+            parent=self.dialog
+        ):
+            if self.on_delete_visitor(visitor_id):
+                self._load_visitors()  # Refresh list

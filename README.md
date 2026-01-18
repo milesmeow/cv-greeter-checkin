@@ -134,6 +134,22 @@ visitor-checkin/
 - Original photos are not stored (only encodings)
 - Easy to delete individual visitors or wipe all data
 
+## Managing the Database
+
+To view or edit the visitor database, use **DB Browser for SQLite**:
+
+```bash
+brew install --cask db-browser-for-sqlite
+```
+
+Then open the app and load `data/visitors.db`. You'll see the `visitors` table with columns:
+- `id` - Visitor ID
+- `name` - Visitor name
+- `face_encoding` - Face encoding (BLOB)
+- `created_at` - Registration timestamp
+- `last_seen` - Last check-in timestamp
+- `visit_count` - Total visits
+
 ## Troubleshooting
 
 ### "Unsupported image type, must be 8bit gray or RGB image"

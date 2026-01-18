@@ -75,7 +75,8 @@ class FaceRecognizer:
 
         # Find all faces in the image
         face_locations = face_recognition.face_locations(image)
-        
+        print(f"Faces found: {len(face_locations)}")
+
         if not face_locations:
             return RecognitionResult(
                 success=False,

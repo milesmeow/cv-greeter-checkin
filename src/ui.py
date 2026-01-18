@@ -44,8 +44,8 @@ class CheckInUI:
         # Create main window
         self.root = tk.Tk()
         self.root.title("Visitor Check-In")
-        self.root.geometry("700x700")
-        self.root.resizable(False, False)
+        self.root.geometry("700x920")
+        self.root.resizable(True, True)
         
         # Handle window close
         self.root.protocol("WM_DELETE_WINDOW", self._handle_close)
@@ -91,10 +91,31 @@ class CheckInUI:
     
     def _build_ui(self):
         """Construct all UI elements."""
-        # Main container with padding
-        main_frame = ttk.Frame(self.root, padding=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
+        # Create canvas with scrollbar for scrollable content
+        canvas = tk.Canvas(self.root)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+
+        # Main container with padding (inside canvas)
+        main_frame = ttk.Frame(canvas, padding=20)
+
+        # Configure canvas scrolling
+        main_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=main_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Pack scrollbar and canvas
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
         # Header
         header = ttk.Label(
             main_frame,

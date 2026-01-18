@@ -205,3 +205,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# App data (don't commit visitor data)
+data/visitors.db
+data/faces/
+data/logs/
+
+# Vim swap files
+*.swp
+*.swo
+
+# Windows
+Thumbs.db

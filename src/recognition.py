@@ -48,13 +48,31 @@ class FaceRecognizer:
     def detect_and_encode(self, image: np.ndarray) -> RecognitionResult:
         """
         Detect faces in an image and encode the first one found.
-        
+
         Args:
             image: RGB image as numpy array
-            
+
         Returns:
             RecognitionResult with face_encoding and face_location if found
         """
+        # Ensure image is in correct format for face_recognition
+        # Must be 8-bit RGB (uint8, 3 channels), contiguous in memory
+        if image.dtype != np.uint8:
+            image = image.astype(np.uint8)
+        if len(image.shape) == 2:
+            # Grayscale - convert to RGB
+            image = np.stack([image] * 3, axis=-1)
+        elif image.shape[2] == 4:
+            # RGBA - drop alpha channel
+            image = image[:, :, :3]
+
+        # Ensure array is contiguous (required by dlib)
+        if not image.flags['C_CONTIGUOUS']:
+            image = np.ascontiguousarray(image)
+
+        # Debug: print image info
+        print(f"Image shape: {image.shape}, dtype: {image.dtype}, contiguous: {image.flags['C_CONTIGUOUS']}")
+
         # Find all faces in the image
         face_locations = face_recognition.face_locations(image)
         

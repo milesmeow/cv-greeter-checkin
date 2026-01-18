@@ -12,41 +12,53 @@ A simple facial recognition check-in system for religious organizations. Designe
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.11 (recommended)
 - Webcam (built-in or external)
 - Windows, macOS, or Linux
 
 ## Quick Start
 
-### Prerequisites
+### macOS (Recommended: Conda)
 
-The `face_recognition` library requires `dlib`, which needs cmake and a C++ compiler:
+The `face_recognition` library requires `dlib`, which is difficult to build from source on macOS. Using Conda with pre-built binaries is the most reliable approach.
 
-**macOS:**
 ```bash
-brew install cmake
+# 1. Install Miniconda (if not already installed)
+brew install --cask miniconda
+
+# 2. Initialize conda (then restart your terminal)
+conda init "$(basename "${SHELL}")"
+
+# 3. Accept terms of service (first time only)
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+# 4. Create environment with Python 3.11
+conda create -n visitor-checkin python=3.11 -y
+
+# 5. Activate the environment
+conda activate visitor-checkin
+
+# 6. Install dlib from conda-forge (pre-built binary)
+conda install -c conda-forge dlib -y
+
+# 7. Install remaining dependencies with pip
+# Note: numpy must be < 2.0 for dlib compatibility
+pip install face_recognition opencv-python pillow "numpy<2"
+
+# 8. Run the app
+python main.py
 ```
 
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install build-essential cmake python3-dev
-```
-
-**Windows:**
-```bash
-pip install cmake
-```
-
-### Installation
+### Ubuntu/Debian (pip)
 
 ```bash
-# 1. Create virtual environment
+# 1. Install build dependencies
+sudo apt-get update
+sudo apt-get install build-essential cmake python3-dev python3-venv
+
+# 2. Create and activate virtual environment
 python3 -m venv venv
-
-# 2. Activate it
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
 source venv/bin/activate
 
 # 3. Install dependencies
@@ -55,6 +67,25 @@ pip install -r requirements.txt
 # 4. Run the app
 python main.py
 ```
+
+### Windows (pip)
+
+```bash
+# 1. Install cmake
+pip install cmake
+
+# 2. Create and activate virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Run the app
+python main.py
+```
+
+If dlib fails to build on Windows, try: `pip install dlib --prefer-binary` or use Conda as described in the macOS section.
 
 ## Project Structure
 
@@ -102,6 +133,20 @@ visitor-checkin/
 - Face encodings are mathematical representations, not photos
 - Original photos are not stored (only encodings)
 - Easy to delete individual visitors or wipe all data
+
+## Troubleshooting
+
+### "Unsupported image type, must be 8bit gray or RGB image"
+This error occurs when numpy 2.x is installed. dlib is not compatible with numpy 2.x. Fix:
+```bash
+pip install "numpy<2"
+```
+
+### Camera permission denied (macOS)
+Go to **System Settings** → **Privacy & Security** → **Camera** and enable access for your terminal app.
+
+### dlib fails to build
+Use Conda instead of pip to install dlib from conda-forge, which provides pre-built binaries. See the macOS installation instructions.
 
 ## Future Enhancements (TODO)
 

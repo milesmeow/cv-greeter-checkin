@@ -134,6 +134,19 @@ class CheckInUI:
         )
         self.browse_btn.pack(anchor=tk.N, pady=(10, 0))
 
+        # Spacer to push quit button to bottom
+        spacer = ttk.Frame(sidebar)
+        spacer.pack(fill=tk.Y, expand=True)
+
+        # Quit button at bottom
+        self.quit_btn = ttk.Button(
+            sidebar,
+            text="Quit",
+            style='Register.TButton',
+            command=self._handle_close
+        )
+        self.quit_btn.pack(anchor=tk.S, pady=(10, 0))
+
         # Create canvas with scrollbar for scrollable main content
         canvas = tk.Canvas(content_frame)
         scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)

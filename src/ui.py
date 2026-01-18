@@ -28,7 +28,8 @@ class CheckInUI:
         on_checkin: Callable[[], None],
         on_close: Callable[[], None],
         on_get_visitors: Callable[[], List[dict]] = None,
-        on_delete_visitor: Callable[[int], bool] = None
+        on_delete_visitor: Callable[[int], bool] = None,
+        on_get_checkins: Callable[[], List[dict]] = None
     ):
         """
         Initialize the UI.
@@ -38,11 +39,13 @@ class CheckInUI:
             on_close: Callback when window is closed
             on_get_visitors: Callback to get all registered visitors
             on_delete_visitor: Callback to delete a visitor by ID
+            on_get_checkins: Callback to get today's check-ins
         """
         self.on_checkin = on_checkin
         self.on_close = on_close
         self.on_get_visitors = on_get_visitors
         self.on_delete_visitor = on_delete_visitor
+        self.on_get_checkins = on_get_checkins
 
         # Create main window
         self.root = tk.Tk()
@@ -108,6 +111,14 @@ class CheckInUI:
             command=self._show_admin_dialog
         )
         self.admin_btn.pack(anchor=tk.N)
+
+        self.history_btn = ttk.Button(
+            sidebar,
+            text="Today's\nCheck-ins",
+            style='Register.TButton',
+            command=self._show_history_dialog
+        )
+        self.history_btn.pack(anchor=tk.N, pady=(10, 0))
 
         # Create canvas with scrollbar for scrollable main content
         canvas = tk.Canvas(content_frame)
@@ -275,6 +286,14 @@ class CheckInUI:
                 parent=self.root,
                 on_get_visitors=self.on_get_visitors,
                 on_delete_visitor=self.on_delete_visitor
+            )
+
+    def _show_history_dialog(self):
+        """Show the check-in history dialog."""
+        if self.on_get_checkins:
+            CheckInHistoryDialog(
+                parent=self.root,
+                on_get_checkins=self.on_get_checkins
             )
 
     def run(self):
@@ -598,3 +617,132 @@ class AdminDialog:
         ):
             if self.on_delete_visitor(visitor_id):
                 self._load_visitors()  # Refresh list
+
+
+class CheckInHistoryDialog:
+    """
+    Modal dialog for viewing today's check-in history.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_get_checkins: Callable[[], List[dict]]
+    ):
+        """
+        Initialize the check-in history dialog.
+
+        Args:
+            parent: Parent window
+            on_get_checkins: Callback to get today's check-ins
+        """
+        self.on_get_checkins = on_get_checkins
+
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Today's Check-ins")
+        self.dialog.geometry("500x400")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Center over parent
+        self.dialog.geometry(f"+{parent.winfo_x() + 100}+{parent.winfo_y() + 100}")
+
+        self._build_ui()
+        self._load_checkins()
+
+    def _build_ui(self):
+        """Construct the dialog UI."""
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header with date
+        today = datetime.now().strftime("%A, %B %d, %Y")
+        ttk.Label(
+            main_frame,
+            text=f"Check-ins for {today}",
+            font=('Helvetica', 14, 'bold')
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        # Treeview frame (for scrollbar)
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Create Treeview with columns
+        columns = ('time', 'name', 'type')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+
+        # Define headings
+        self.tree.heading('time', text='Time')
+        self.tree.heading('name', text='Visitor')
+        self.tree.heading('type', text='Type')
+
+        # Define column widths
+        self.tree.column('time', width=100)
+        self.tree.column('name', width=200)
+        self.tree.column('type', width=120)
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        # Pack tree and scrollbar
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=('Helvetica', 10),
+            foreground='gray'
+        )
+        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+
+        # Button frame
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        # Close button
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT)
+
+    def _load_checkins(self):
+        """Load check-ins and populate the Treeview."""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Get check-ins
+        checkins = self.on_get_checkins()
+
+        # Populate treeview (most recent first)
+        for checkin in reversed(checkins):
+            # Format time from timestamp
+            time_str = self._format_time(checkin['timestamp'])
+            check_type = "Recognized" if checkin['recognized'] else "New Registration"
+
+            self.tree.insert('', tk.END, values=(
+                time_str,
+                checkin['visitor_name'],
+                check_type
+            ))
+
+        # Update status
+        count = len(checkins)
+        self.status_label.configure(
+            text=f"Total: {count} check-in{'s' if count != 1 else ''} today"
+        )
+
+    def _format_time(self, timestamp_str: str) -> str:
+        """Format a timestamp for display."""
+        try:
+            dt = datetime.fromisoformat(timestamp_str.replace(" ", "T"))
+            return dt.strftime("%I:%M %p")
+        except (ValueError, TypeError):
+            return timestamp_str

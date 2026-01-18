@@ -44,7 +44,8 @@ class CheckInApp:
             on_checkin=self.handle_checkin,
             on_close=self.handle_close,
             on_get_visitors=self.get_visitors,
-            on_delete_visitor=self.delete_visitor
+            on_delete_visitor=self.delete_visitor,
+            on_get_checkins=self.get_checkins
         )
         
         # Start camera
@@ -210,6 +211,15 @@ class CheckInApp:
             self._update_stats()
             print(f"Deleted visitor ID: {visitor_id}")
         return result
+
+    def get_checkins(self) -> list:
+        """
+        Get today's check-ins for display.
+
+        Returns:
+            List of check-in dictionaries with timestamp, visitor_id, visitor_name, recognized
+        """
+        return self.logger.get_today_checkins()
 
     def run(self):
         """Start the application."""

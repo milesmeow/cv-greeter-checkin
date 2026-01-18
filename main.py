@@ -45,7 +45,9 @@ class CheckInApp:
             on_close=self.handle_close,
             on_get_visitors=self.get_visitors,
             on_delete_visitor=self.delete_visitor,
-            on_get_checkins=self.get_checkins
+            on_get_checkins=self.get_checkins,
+            on_get_available_logs=self.get_available_logs,
+            on_get_checkins_for_date=self.get_checkins_for_date
         )
         
         # Start camera
@@ -220,6 +222,27 @@ class CheckInApp:
             List of check-in dictionaries with timestamp, visitor_id, visitor_name, recognized
         """
         return self.logger.get_today_checkins()
+
+    def get_available_logs(self) -> list:
+        """
+        Get list of available log dates.
+
+        Returns:
+            List of date strings (YYYY-MM-DD) sorted newest first
+        """
+        return self.logger.get_available_logs()
+
+    def get_checkins_for_date(self, date_str: str) -> list:
+        """
+        Get check-ins for a specific date.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            List of check-in dictionaries
+        """
+        return self.logger.get_checkins_for_date(date_str)
 
     def run(self):
         """Start the application."""

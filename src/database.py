@@ -201,15 +201,53 @@ class AttendanceLogger:
     def get_today_checkins(self) -> List[dict]:
         """
         Get all check-ins from today.
-        
+
         Returns:
             List of check-in records
         """
         log_path = self._get_log_path()
-        
+        return self._parse_log_file(log_path)
+
+    def get_available_logs(self) -> List[str]:
+        """
+        Get list of available log dates.
+
+        Returns:
+            List of date strings (YYYY-MM-DD) sorted newest first
+        """
+        dates = []
+        for log_file in self.log_dir.glob("attendance_*.csv"):
+            # Extract date from filename: attendance_YYYY-MM-DD.csv
+            date_str = log_file.stem.replace("attendance_", "")
+            dates.append(date_str)
+        return sorted(dates, reverse=True)
+
+    def get_checkins_for_date(self, date_str: str) -> List[dict]:
+        """
+        Get check-ins for a specific date.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            List of check-in records
+        """
+        log_path = self.log_dir / f"attendance_{date_str}.csv"
+        return self._parse_log_file(log_path)
+
+    def _parse_log_file(self, log_path: Path) -> List[dict]:
+        """
+        Parse a log file and return check-in records.
+
+        Args:
+            log_path: Path to the log file
+
+        Returns:
+            List of check-in records
+        """
         if not log_path.exists():
             return []
-        
+
         checkins = []
         with open(log_path, "r") as f:
             lines = f.readlines()[1:]  # Skip header
@@ -222,5 +260,5 @@ class AttendanceLogger:
                         "visitor_name": parts[2],
                         "recognized": parts[3].lower() == "true"
                     })
-        
+
         return checkins

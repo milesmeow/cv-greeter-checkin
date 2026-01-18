@@ -29,7 +29,9 @@ class CheckInUI:
         on_close: Callable[[], None],
         on_get_visitors: Callable[[], List[dict]] = None,
         on_delete_visitor: Callable[[int], bool] = None,
-        on_get_checkins: Callable[[], List[dict]] = None
+        on_get_checkins: Callable[[], List[dict]] = None,
+        on_get_available_logs: Callable[[], List[str]] = None,
+        on_get_checkins_for_date: Callable[[str], List[dict]] = None
     ):
         """
         Initialize the UI.
@@ -40,12 +42,16 @@ class CheckInUI:
             on_get_visitors: Callback to get all registered visitors
             on_delete_visitor: Callback to delete a visitor by ID
             on_get_checkins: Callback to get today's check-ins
+            on_get_available_logs: Callback to get list of available log dates
+            on_get_checkins_for_date: Callback to get check-ins for a specific date
         """
         self.on_checkin = on_checkin
         self.on_close = on_close
         self.on_get_visitors = on_get_visitors
         self.on_delete_visitor = on_delete_visitor
         self.on_get_checkins = on_get_checkins
+        self.on_get_available_logs = on_get_available_logs
+        self.on_get_checkins_for_date = on_get_checkins_for_date
 
         # Create main window
         self.root = tk.Tk()
@@ -119,6 +125,14 @@ class CheckInUI:
             command=self._show_history_dialog
         )
         self.history_btn.pack(anchor=tk.N, pady=(10, 0))
+
+        self.browse_btn = ttk.Button(
+            sidebar,
+            text="Browse\nHistory",
+            style='Register.TButton',
+            command=self._show_history_browser
+        )
+        self.browse_btn.pack(anchor=tk.N, pady=(10, 0))
 
         # Create canvas with scrollbar for scrollable main content
         canvas = tk.Canvas(content_frame)
@@ -294,6 +308,15 @@ class CheckInUI:
             CheckInHistoryDialog(
                 parent=self.root,
                 on_get_checkins=self.on_get_checkins
+            )
+
+    def _show_history_browser(self):
+        """Show the history browser dialog."""
+        if self.on_get_available_logs and self.on_get_checkins_for_date:
+            HistoryBrowserDialog(
+                parent=self.root,
+                on_get_available_logs=self.on_get_available_logs,
+                on_get_checkins_for_date=self.on_get_checkins_for_date
             )
 
     def run(self):
@@ -737,6 +760,208 @@ class CheckInHistoryDialog:
         count = len(checkins)
         self.status_label.configure(
             text=f"Total: {count} check-in{'s' if count != 1 else ''} today"
+        )
+
+    def _format_time(self, timestamp_str: str) -> str:
+        """Format a timestamp for display."""
+        try:
+            dt = datetime.fromisoformat(timestamp_str.replace(" ", "T"))
+            return dt.strftime("%I:%M %p")
+        except (ValueError, TypeError):
+            return timestamp_str
+
+
+class HistoryBrowserDialog:
+    """
+    Modal dialog for browsing historical check-in logs.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_get_available_logs: Callable[[], List[str]],
+        on_get_checkins_for_date: Callable[[str], List[dict]]
+    ):
+        """
+        Initialize the history browser dialog.
+
+        Args:
+            parent: Parent window
+            on_get_available_logs: Callback to get list of available log dates
+            on_get_checkins_for_date: Callback to get check-ins for a specific date
+        """
+        self.on_get_available_logs = on_get_available_logs
+        self.on_get_checkins_for_date = on_get_checkins_for_date
+
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Browse Check-in History")
+        self.dialog.geometry("650x450")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Center over parent
+        self.dialog.geometry(f"+{parent.winfo_x() + 75}+{parent.winfo_y() + 75}")
+
+        self._build_ui()
+        self._load_available_dates()
+
+    def _build_ui(self):
+        """Construct the dialog UI."""
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header
+        ttk.Label(
+            main_frame,
+            text="Browse Check-in History",
+            font=('Helvetica', 14, 'bold')
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        # Content frame - two panes
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Left pane - date list
+        left_frame = ttk.Frame(content_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        ttk.Label(
+            left_frame,
+            text="Available Dates:",
+            font=('Helvetica', 10, 'bold')
+        ).pack(anchor=tk.W)
+
+        # Date listbox with scrollbar
+        date_frame = ttk.Frame(left_frame)
+        date_frame.pack(fill=tk.Y, expand=True, pady=(5, 0))
+
+        self.date_listbox = tk.Listbox(date_frame, width=15, height=15)
+        date_scrollbar = ttk.Scrollbar(date_frame, orient=tk.VERTICAL, command=self.date_listbox.yview)
+        self.date_listbox.configure(yscrollcommand=date_scrollbar.set)
+
+        self.date_listbox.pack(side=tk.LEFT, fill=tk.Y)
+        date_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind selection event
+        self.date_listbox.bind('<<ListboxSelect>>', self._on_date_select)
+
+        # Right pane - check-ins for selected date
+        right_frame = ttk.Frame(content_frame)
+        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.date_label = ttk.Label(
+            right_frame,
+            text="Select a date to view check-ins",
+            font=('Helvetica', 10, 'bold')
+        )
+        self.date_label.pack(anchor=tk.W)
+
+        # Treeview for check-ins
+        tree_frame = ttk.Frame(right_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        columns = ('time', 'name', 'type')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+
+        self.tree.heading('time', text='Time')
+        self.tree.heading('name', text='Visitor')
+        self.tree.heading('type', text='Type')
+
+        self.tree.column('time', width=80)
+        self.tree.column('name', width=180)
+        self.tree.column('type', width=100)
+
+        tree_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scrollbar.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=('Helvetica', 10),
+            foreground='gray'
+        )
+        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+
+        # Button frame
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT)
+
+    def _load_available_dates(self):
+        """Load available log dates into the listbox."""
+        dates = self.on_get_available_logs()
+
+        self.date_listbox.delete(0, tk.END)
+        for date_str in dates:
+            # Format date for display
+            display_date = self._format_date_for_list(date_str)
+            self.date_listbox.insert(tk.END, display_date)
+
+        # Store the raw dates for lookup
+        self._date_map = {self._format_date_for_list(d): d for d in dates}
+
+        if not dates:
+            self.status_label.configure(text="No check-in logs found")
+
+    def _format_date_for_list(self, date_str: str) -> str:
+        """Format a date string for display in the list."""
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            return dt.strftime("%b %d, %Y")
+        except ValueError:
+            return date_str
+
+    def _on_date_select(self, event):
+        """Handle date selection."""
+        selection = self.date_listbox.curselection()
+        if not selection:
+            return
+
+        display_date = self.date_listbox.get(selection[0])
+        date_str = self._date_map.get(display_date, display_date)
+
+        # Update header
+        self.date_label.configure(text=f"Check-ins for {display_date}:")
+
+        # Load check-ins for this date
+        self._load_checkins_for_date(date_str)
+
+    def _load_checkins_for_date(self, date_str: str):
+        """Load check-ins for a specific date."""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Get check-ins
+        checkins = self.on_get_checkins_for_date(date_str)
+
+        # Populate treeview (most recent first)
+        for checkin in reversed(checkins):
+            time_str = self._format_time(checkin['timestamp'])
+            check_type = "Check In" if checkin['recognized'] else "Registered"
+
+            self.tree.insert('', tk.END, values=(
+                time_str,
+                checkin['visitor_name'],
+                check_type
+            ))
+
+        # Update status
+        count = len(checkins)
+        self.status_label.configure(
+            text=f"Total: {count} check-in{'s' if count != 1 else ''}"
         )
 
     def _format_time(self, timestamp_str: str) -> str:

@@ -42,7 +42,6 @@ class CheckInApp:
         # Initialize UI with callbacks
         self.ui = CheckInUI(
             on_checkin=self.handle_checkin,
-            on_register=self.handle_register,
             on_close=self.handle_close
         )
         
@@ -104,22 +103,29 @@ class CheckInApp:
             self.ui.set_status(result.message, "warning")
             return
         
+        # Define register callback (used in both flows)
+        def on_register(new_name, encoding):
+            self._register_new_visitor(new_name, encoding)
+
         if result.success and result.visitor_id is not None:
-            # Known visitor recognized!
-            self._welcome_visitor(result.visitor_id, result.visitor_name, display_frame, result.face_location)
+            # Known visitor recognized - show confirmation dialog
+            def on_confirm():
+                self._welcome_visitor(result.visitor_id, result.visitor_name, display_frame, result.face_location)
+
+            self.ui.show_recognition_dialog(
+                recognized_name=result.visitor_name,
+                encoding=result.face_encoding,
+                on_confirm=on_confirm,
+                on_register=on_register
+            )
         else:
-            # Unknown face - prompt for registration
-            self.ui.set_status("New visitor detected. Please enter their name below.", "info")
-            self.ui.enable_registration(result.face_encoding)
-            
-            # Show the captured frame with face box
-            if result.face_location:
-                # Need to mirror the face location since display is mirrored
-                top, right, bottom, left = result.face_location
-                frame_width = display_frame.shape[1]
-                mirrored_location = (top, frame_width - left, bottom, frame_width - right)
-                display_frame = draw_face_box(display_frame, mirrored_location, "New Visitor", (255, 165, 0))
-            self.ui.update_camera_frame(display_frame)
+            # Unknown face - show dialog to register
+            self.ui.show_recognition_dialog(
+                recognized_name=None,
+                encoding=result.face_encoding,
+                on_confirm=None,
+                on_register=on_register
+            )
     
     def _welcome_visitor(self, visitor_id: int, name: str, frame, face_location):
         """
@@ -152,30 +158,25 @@ class CheckInApp:
         
         print(f"Check-in: {name} (ID: {visitor_id}) at {datetime.now()}")
     
-    def handle_register(self, name: str):
+    def _register_new_visitor(self, name: str, encoding):
         """
-        Handle registration of a new visitor.
-        
+        Register a new visitor with the given name and face encoding.
+
         Args:
-            name: The name entered by the greeter
+            name: The visitor's name
+            encoding: The face encoding
         """
-        encoding = self.ui.get_pending_encoding()
-        
-        if encoding is None:
-            self.ui.set_status("No face captured. Please click Check In first.", "error")
-            return
-        
         # Add to database
         visitor_id = self.database.add_visitor(name, encoding)
-        
+
         # Log the check-in
         self.logger.log_checkin(visitor_id, name, recognized=False)
-        
+
         # Update UI
         self.ui.set_status(f"✓ Registered and checked in: {name}", "success")
         self.ui.set_last_checkin(name, datetime.now())
         self._update_stats()
-        
+
         print(f"New registration: {name} (ID: {visitor_id}) at {datetime.now()}")
     
     def handle_close(self):

@@ -26,39 +26,35 @@ class CheckInUI:
     def __init__(
         self,
         on_checkin: Callable[[], None],
-        on_register: Callable[[str], None],
         on_close: Callable[[], None]
     ):
         """
         Initialize the UI.
-        
+
         Args:
             on_checkin: Callback when Check In button is clicked
-            on_register: Callback when Register button is clicked (passes name)
             on_close: Callback when window is closed
         """
         self.on_checkin = on_checkin
-        self.on_register = on_register
         self.on_close = on_close
-        
+
         # Create main window
         self.root = tk.Tk()
         self.root.title("Visitor Check-In")
-        self.root.geometry("700x920")
+        self.root.geometry("700x750")
         self.root.resizable(True, True)
-        
+
         # Handle window close
         self.root.protocol("WM_DELETE_WINDOW", self._handle_close)
-        
+
         # Style configuration
         self._setup_styles()
-        
+
         # Build UI components
         self._build_ui()
-        
+
         # State
         self._current_frame: Optional[ImageTk.PhotoImage] = None
-        self._pending_encoding: Optional[np.ndarray] = None
     
     def _setup_styles(self):
         """Configure ttk styles for a clean look."""
@@ -163,41 +159,7 @@ class CheckInUI:
             foreground='gray'
         )
         self.last_checkin_label.pack()
-        
-        # Separator
-        ttk.Separator(main_frame, orient='horizontal').pack(fill=tk.X, pady=15)
-        
-        # New visitor registration section
-        reg_frame = ttk.LabelFrame(main_frame, text="New Visitor Registration", padding=10)
-        reg_frame.pack(fill=tk.X)
-        
-        # Name entry
-        name_frame = ttk.Frame(reg_frame)
-        name_frame.pack(fill=tk.X)
-        
-        ttk.Label(name_frame, text="Name:").pack(side=tk.LEFT, padx=5)
-        
-        self.name_entry = ttk.Entry(name_frame, width=30, font=('Helvetica', 12))
-        self.name_entry.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        
-        self.register_btn = ttk.Button(
-            name_frame,
-            text="Register",
-            style='Register.TButton',
-            command=self._handle_register,
-            state='disabled'
-        )
-        self.register_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Registration hint
-        self.reg_hint = ttk.Label(
-            reg_frame,
-            text="First capture face with 'Check In', then enter name and click 'Register'",
-            font=('Helvetica', 9),
-            foreground='gray'
-        )
-        self.reg_hint.pack(pady=5)
-        
+
         # Stats at bottom
         self.stats_label = ttk.Label(
             main_frame,
@@ -275,50 +237,10 @@ class CheckInUI:
             text=f"Registered visitors: {total_visitors}  |  Today's check-ins: {today_checkins}"
         )
     
-    def enable_registration(self, encoding: np.ndarray):
-        """
-        Enable the registration section for a new visitor.
-        
-        Args:
-            encoding: The face encoding to register
-        """
-        self._pending_encoding = encoding
-        self.register_btn.configure(state='normal')
-        self.name_entry.focus_set()
-        self.reg_hint.configure(
-            text="Face captured! Enter the visitor's name and click 'Register'",
-            foreground='green'
-        )
-    
-    def disable_registration(self):
-        """Disable the registration section."""
-        self._pending_encoding = None
-        self.register_btn.configure(state='disabled')
-        self.name_entry.delete(0, tk.END)
-        self.reg_hint.configure(
-            text="First capture face with 'Check In', then enter name and click 'Register'",
-            foreground='gray'
-        )
-    
-    def get_pending_encoding(self) -> Optional[np.ndarray]:
-        """Get the face encoding waiting to be registered."""
-        return self._pending_encoding
-    
     def _handle_checkin(self):
         """Handle Check In button click."""
-        self.disable_registration()
         self.on_checkin()
-    
-    def _handle_register(self):
-        """Handle Register button click."""
-        name = self.name_entry.get().strip()
-        if not name:
-            messagebox.showwarning("Name Required", "Please enter the visitor's name.")
-            return
-        
-        self.on_register(name)
-        self.disable_registration()
-    
+
     def _handle_close(self):
         """Handle window close."""
         self.on_close()
@@ -331,9 +253,128 @@ class CheckInUI:
     def schedule(self, callback: Callable, delay_ms: int = 0):
         """
         Schedule a callback to run in the UI thread.
-        
+
         Args:
             callback: Function to call
             delay_ms: Delay in milliseconds
         """
         self.root.after(delay_ms, callback)
+
+    def show_recognition_dialog(
+        self,
+        recognized_name: Optional[str],
+        encoding: np.ndarray,
+        on_confirm: Optional[Callable[[], None]],
+        on_register: Callable[[str, np.ndarray], None]
+    ):
+        """
+        Show a dialog after face detection.
+
+        Args:
+            recognized_name: The recognized visitor's name, or None if not recognized
+            encoding: The face encoding
+            on_confirm: Callback when user confirms the recognition (only if recognized)
+            on_register: Callback to register a new person (passes name, encoding)
+        """
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Check In")
+        dialog.geometry("400x250")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Center over main window
+        dialog.geometry(f"+{self.root.winfo_x() + 150}+{self.root.winfo_y() + 200}")
+
+        # Main frame with padding
+        frame = ttk.Frame(dialog, padding=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        if recognized_name:
+            # RECOGNIZED FLOW
+            ttk.Label(
+                frame,
+                text=f"Recognized: {recognized_name}",
+                font=('Helvetica', 16, 'bold')
+            ).pack(pady=(0, 15))
+
+            # OK button
+            def handle_confirm():
+                dialog.destroy()
+                on_confirm()
+
+            ok_btn = ttk.Button(
+                frame,
+                text="✓  OK - Check In",
+                style='CheckIn.TButton',
+                command=handle_confirm
+            )
+            ok_btn.pack(pady=(0, 15))
+            ok_btn.focus_set()
+
+            # Bind Enter key to confirm
+            dialog.bind('<Return>', lambda e: handle_confirm())
+
+            # Separator
+            ttk.Separator(frame, orient='horizontal').pack(fill=tk.X, pady=10)
+
+            # "Not correct?" section
+            ttk.Label(
+                frame,
+                text="Not correct?",
+                font=('Helvetica', 10),
+                foreground='gray'
+            ).pack()
+        else:
+            # NOT RECOGNIZED FLOW
+            ttk.Label(
+                frame,
+                text="New Visitor",
+                font=('Helvetica', 16, 'bold')
+            ).pack(pady=(0, 10))
+
+            ttk.Label(
+                frame,
+                text="Face not recognized. Please enter name to register.",
+                font=('Helvetica', 11),
+                foreground='gray'
+            ).pack(pady=(0, 15))
+
+        # Name entry and register button (shown in both cases)
+        reg_frame = ttk.Frame(frame)
+        reg_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Label(reg_frame, text="Name:").pack(side=tk.LEFT, padx=5)
+
+        name_entry = ttk.Entry(reg_frame, width=20, font=('Helvetica', 12))
+        name_entry.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+
+        def handle_register():
+            new_name = name_entry.get().strip()
+            if not new_name:
+                messagebox.showwarning("Name Required", "Please enter the visitor's name.", parent=dialog)
+                return
+            dialog.destroy()
+            on_register(new_name, encoding)
+
+        reg_btn = ttk.Button(
+            reg_frame,
+            text="Register",
+            command=handle_register
+        )
+        reg_btn.pack(side=tk.LEFT, padx=5)
+
+        # If not recognized, focus on name entry and bind Enter to register
+        if not recognized_name:
+            name_entry.focus_set()
+            dialog.bind('<Return>', lambda e: handle_register())
+
+        # Cancel button
+        def handle_cancel():
+            dialog.destroy()
+
+        ttk.Button(
+            frame,
+            text="Cancel",
+            command=handle_cancel
+        ).pack(pady=(15, 0))

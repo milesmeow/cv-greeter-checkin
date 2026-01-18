@@ -47,7 +47,7 @@ class CheckInUI:
         # Create main window
         self.root = tk.Tk()
         self.root.title("Visitor Check-In")
-        self.root.geometry("700x750")
+        self.root.geometry("800x800")
         self.root.resizable(True, True)
 
         # Handle window close
@@ -126,16 +126,29 @@ class CheckInUI:
         )
         header.pack()
         
+        # Camera row (camera + admin button on the right)
+        camera_row = ttk.Frame(main_frame)
+        camera_row.pack(pady=10)
+
         # Camera preview frame
-        self.camera_frame = ttk.Frame(main_frame, relief='sunken', borderwidth=2)
-        self.camera_frame.pack(pady=10)
-        
+        self.camera_frame = ttk.Frame(camera_row, relief='sunken', borderwidth=2)
+        self.camera_frame.pack(side=tk.LEFT)
+
         self.camera_label = ttk.Label(self.camera_frame)
         self.camera_label.pack()
-        
+
+        # Manage Visitors button (to the right of camera)
+        self.admin_btn = ttk.Button(
+            camera_row,
+            text="Manage\nVisitors",
+            style='Register.TButton',
+            command=self._show_admin_dialog
+        )
+        self.admin_btn.pack(side=tk.LEFT, padx=(10, 0), anchor=tk.N)
+
         # Placeholder for camera
         self._show_placeholder()
-        
+
         # Check-in button
         self.checkin_btn = ttk.Button(
             main_frame,
@@ -144,15 +157,6 @@ class CheckInUI:
             command=self._handle_checkin
         )
         self.checkin_btn.pack(pady=15)
-
-        # Manage Visitors button
-        self.admin_btn = ttk.Button(
-            main_frame,
-            text="Manage Visitors",
-            style='Register.TButton',
-            command=self._show_admin_dialog
-        )
-        self.admin_btn.pack(pady=5)
 
         # Status display
         status_frame = ttk.Frame(main_frame, relief='groove', borderwidth=1)

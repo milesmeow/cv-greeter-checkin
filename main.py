@@ -100,7 +100,9 @@ class CheckInApp:
                 return
 
             frame = self.camera.get_frame_for_display()
-            if frame is not None and self._is_frame_valid(frame):
+            if frame is None:
+                print(f"  [DEBUG] Frame is None (camera state: {self.camera.state})")
+            elif self._is_frame_valid(frame):
                 # Camera ready
                 print("[DEBUG] Camera ready! Starting preview loop.")
                 self.camera.set_ready()
@@ -327,6 +329,7 @@ class CheckInApp:
 
 def main():
     """Entry point."""
+    app = None
     try:
         app = CheckInApp()
         app.run()
@@ -335,6 +338,9 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
         raise
+    finally:
+        if app:
+            app.handle_close()
 
 
 if __name__ == "__main__":

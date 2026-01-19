@@ -59,6 +59,28 @@ class Camera:
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.cap.set(cv2.CAP_PROP_FPS, 30)
 
+        # Give camera hardware time to initialize (macOS especially needs this)
+        import time
+        print("[DEBUG] Camera opened, waiting for hardware init...")
+
+        # Keep trying until we get successful frame reads
+        max_init_attempts = 20
+        successful_reads = 0
+        for attempt in range(max_init_attempts):
+            time.sleep(0.1)  # 100ms between attempts
+            ret, _ = self.cap.read()
+            print(f"[DEBUG] Init frame attempt {attempt+1}/{max_init_attempts}: ret={ret}")
+            if ret:
+                successful_reads += 1
+                if successful_reads >= 3:
+                    print(f"[DEBUG] Camera hardware ready after {attempt+1} attempts")
+                    break
+            else:
+                successful_reads = 0  # Reset on failure
+
+        if successful_reads < 3:
+            print("[DEBUG] Warning: Camera init incomplete, continuing anyway...")
+
         self._is_running = True
         self._state = CameraState.WARMING_UP
         self._consecutive_failures = 0
@@ -80,12 +102,14 @@ class Camera:
             BGR image as numpy array, or None if capture failed
         """
         if not self._is_running or self.cap is None:
+            print(f"  [DEBUG] get_frame: not running or cap is None")
             return None
 
         ret, frame = self.cap.read()
 
         if not ret or frame is None:
             self._consecutive_failures += 1
+            print(f"  [DEBUG] get_frame: read failed (ret={ret}, failures={self._consecutive_failures})")
             if self._consecutive_failures >= self._max_consecutive_failures:
                 self._state = CameraState.ERROR
             return None

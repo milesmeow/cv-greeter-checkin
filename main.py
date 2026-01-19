@@ -16,7 +16,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.camera import Camera
+from src.camera import Camera, CameraState
 from src.recognition import FaceRecognizer, draw_face_box
 from src.database import VisitorDatabase, AttendanceLogger
 from src.ui import CheckInUI
@@ -56,23 +56,90 @@ class CheckInApp:
         
         # Update stats display
         self._update_stats()
-        
+
+        # Warmup state
+        self._warmup_attempt = 0
+        self._warmup_delay = 100
+
         # Start camera preview loop
         self._start_preview_loop()
-    
+
+    def _is_frame_valid(self, frame) -> bool:
+        """Check if frame is valid for display."""
+        if frame is None:
+            print("  [DEBUG] Frame is None")
+            return False
+        if len(frame.shape) != 3:
+            print(f"  [DEBUG] Frame has wrong shape: {frame.shape}")
+            return False
+        import numpy as np
+        mean_brightness = np.mean(frame)
+        print(f"  [DEBUG] Frame brightness: {mean_brightness:.1f} (valid range: 5-250)")
+        return 5 < mean_brightness < 250
+
     def _start_preview_loop(self):
-        """Start the camera preview update loop."""
-        def update_preview():
-            if self.camera.is_running:
-                frame = self.camera.get_frame_for_display()
-                if frame is not None:
-                    self.ui.update_camera_frame(frame)
-            
-            # Schedule next update (roughly 30 fps)
-            self.ui.schedule(update_preview, 33)
-        
-        # Start the loop
-        self.ui.schedule(update_preview, 100)
+        """Start the camera preview update loop with warmup and recovery."""
+
+        def do_warmup():
+            """Perform camera warmup with user feedback."""
+            self.ui.set_camera_status("Connecting to camera...", "info")
+            self._warmup_attempt = 0
+            self._warmup_delay = 100
+            check_warmup()
+
+        def check_warmup():
+            """Check if camera is producing valid frames."""
+            print(f"[DEBUG] Warmup attempt {self._warmup_attempt + 1}/15, delay={self._warmup_delay}ms")
+
+            if self._warmup_attempt >= 15:
+                # Max attempts reached, keep trying at slower rate
+                print("[DEBUG] Max warmup attempts reached, switching to slow retry (1s)")
+                self.ui.set_camera_status("Camera warming up...", "warning")
+                self._warmup_attempt = 0
+                self.ui.schedule(check_warmup, 1000)
+                return
+
+            frame = self.camera.get_frame_for_display()
+            if frame is not None and self._is_frame_valid(frame):
+                # Camera ready
+                print("[DEBUG] Camera ready! Starting preview loop.")
+                self.camera.set_ready()
+                self.ui.set_status("Ready - Click 'Check In' when visitor arrives", "info")
+                start_preview()
+            else:
+                # Not ready yet, try again with exponential backoff
+                self._warmup_attempt += 1
+                self._warmup_delay = min(int(self._warmup_delay * 1.3), 500)
+                self.ui.schedule(check_warmup, self._warmup_delay)
+
+        def start_preview():
+            """Start the regular preview update loop."""
+            def update_preview():
+                try:
+                    if self.camera.is_running:
+                        frame = self.camera.get_frame_for_display()
+                        if frame is not None:
+                            self.ui.update_camera_frame(frame)
+                        elif self.camera.state == CameraState.ERROR:
+                            # Camera failed, attempt recovery
+                            self.ui.set_camera_status("Camera error - reconnecting...", "error")
+                            self.ui.schedule(do_warmup, 1000)
+                            return  # Stop this loop, warmup will restart it
+
+                    # Schedule next update (roughly 30 fps)
+                    self.ui.schedule(update_preview, 33)
+                except Exception as e:
+                    print(f"Preview error: {e}")
+                    self.ui.schedule(update_preview, 100)
+
+            update_preview()
+
+        # Start with warmup
+        if self.camera.is_running:
+            self.ui.schedule(do_warmup, 50)
+        else:
+            self.ui.set_camera_status("Camera not available", "error")
+            self.ui.set_status("Camera not available. Check connection and restart.", "error")
     
     def _update_stats(self):
         """Update the statistics display."""

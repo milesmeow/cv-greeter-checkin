@@ -6,7 +6,7 @@ Provides the greeter interface for checking in visitors.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import numpy as np
 from typing import Callable, Optional, List
 from datetime import datetime
@@ -235,23 +235,78 @@ class CheckInUI:
         placeholder = Image.new('RGB', (640, 480), color=(200, 200, 200))
         self._current_frame = ImageTk.PhotoImage(placeholder)
         self.camera_label.configure(image=self._current_frame)
-    
+
+    def set_camera_status(self, status: str, status_type: str = "info"):
+        """
+        Show camera connection status on the preview.
+
+        Args:
+            status: Status message (e.g., "Connecting to camera...")
+            status_type: "info", "warning", or "error"
+        """
+        colors = {
+            "info": (80, 80, 80),
+            "warning": (180, 130, 40),
+            "error": (180, 50, 50)
+        }
+        text_color = colors.get(status_type, (80, 80, 80))
+
+        # Create image with status text
+        image = Image.new('RGB', (640, 480), color=(200, 200, 200))
+        draw = ImageDraw.Draw(image)
+
+        # Try to use a system font, fall back to default
+        font = None
+        font_paths = [
+            "/System/Library/Fonts/Helvetica.ttc",  # macOS
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+        ]
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, 24)
+                break
+            except (OSError, IOError):
+                continue
+
+        if font is None:
+            font = ImageFont.load_default()
+
+        # Center the text
+        bbox = draw.textbbox((0, 0), status, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (640 - text_width) // 2
+        y = (480 - text_height) // 2
+
+        draw.text((x, y), status, fill=text_color, font=font)
+
+        self._current_frame = ImageTk.PhotoImage(image)
+        self.camera_label.configure(image=self._current_frame)
+
     def update_camera_frame(self, frame: np.ndarray):
         """
         Update the camera preview with a new frame.
-        
+
         Args:
             frame: RGB image as numpy array
         """
-        # Convert to PIL Image
-        image = Image.fromarray(frame)
-        
-        # Resize if needed
-        image = image.resize((640, 480), Image.Resampling.LANCZOS)
-        
-        # Convert to PhotoImage for Tkinter
-        self._current_frame = ImageTk.PhotoImage(image)
-        self.camera_label.configure(image=self._current_frame)
+        try:
+            # Validate frame before processing
+            if frame is None or len(frame.shape) != 3:
+                return  # Skip invalid frames silently
+
+            # Convert to PIL Image
+            image = Image.fromarray(frame)
+
+            # Resize if needed
+            image = image.resize((640, 480), Image.Resampling.LANCZOS)
+
+            # Convert to PhotoImage for Tkinter
+            self._current_frame = ImageTk.PhotoImage(image)
+            self.camera_label.configure(image=self._current_frame)
+        except Exception as e:
+            print(f"Warning: Failed to update camera frame: {e}")
     
     def set_status(self, message: str, status_type: str = "info"):
         """

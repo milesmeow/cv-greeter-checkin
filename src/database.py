@@ -180,36 +180,65 @@ class AttendanceLogger:
     def log_checkin(self, visitor_id: int, visitor_name: str, recognized: bool):
         """
         Log a check-in event.
-        
+
         Args:
             visitor_id: The visitor's database ID
             visitor_name: The visitor's name
             recognized: Whether this was a recognized visitor or new registration
         """
-        log_path = self._get_log_path()
-        
-        # Write header if new file
-        write_header = not log_path.exists()
-        
-        with open(log_path, "a") as f:
-            if write_header:
-                f.write("timestamp,visitor_id,visitor_name,recognized\n")
-            
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"{timestamp},{visitor_id},{visitor_name},{recognized}\n")
+        action = "checkin" if recognized else "register"
+        self._log_event(visitor_id, visitor_name, action)
     
     def get_today_checkins(self) -> List[dict]:
         """
         Get all check-ins from today.
-        
+
         Returns:
             List of check-in records
         """
         log_path = self._get_log_path()
-        
+        return self._parse_log_file(log_path)
+
+    def get_available_logs(self) -> List[str]:
+        """
+        Get list of available log dates.
+
+        Returns:
+            List of date strings (YYYY-MM-DD) sorted newest first
+        """
+        dates = []
+        for log_file in self.log_dir.glob("attendance_*.csv"):
+            # Extract date from filename: attendance_YYYY-MM-DD.csv
+            date_str = log_file.stem.replace("attendance_", "")
+            dates.append(date_str)
+        return sorted(dates, reverse=True)
+
+    def get_checkins_for_date(self, date_str: str) -> List[dict]:
+        """
+        Get check-ins for a specific date.
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+
+        Returns:
+            List of check-in records
+        """
+        log_path = self.log_dir / f"attendance_{date_str}.csv"
+        return self._parse_log_file(log_path)
+
+    def _parse_log_file(self, log_path: Path) -> List[dict]:
+        """
+        Parse a log file and return check-in records.
+
+        Args:
+            log_path: Path to the log file
+
+        Returns:
+            List of check-in records
+        """
         if not log_path.exists():
             return []
-        
+
         checkins = []
         with open(log_path, "r") as f:
             lines = f.readlines()[1:]  # Skip header
@@ -220,7 +249,38 @@ class AttendanceLogger:
                         "timestamp": parts[0],
                         "visitor_id": int(parts[1]),
                         "visitor_name": parts[2],
-                        "recognized": parts[3] == "true"
+                        "action": parts[3]
                     })
-        
+
         return checkins
+
+    def log_deletion(self, visitor_id: int, visitor_name: str):
+        """
+        Log a visitor deletion event.
+
+        Args:
+            visitor_id: The deleted visitor's database ID
+            visitor_name: The deleted visitor's name
+        """
+        self._log_event(visitor_id, visitor_name, "delete")
+
+    def _log_event(self, visitor_id: int, visitor_name: str, action: str):
+        """
+        Log an event to the daily attendance log.
+
+        Args:
+            visitor_id: The visitor's database ID
+            visitor_name: The visitor's name
+            action: The action type (checkin, register, delete)
+        """
+        log_path = self._get_log_path()
+
+        # Write header if new file
+        write_header = not log_path.exists()
+
+        with open(log_path, "a") as f:
+            if write_header:
+                f.write("timestamp,visitor_id,visitor_name,action\n")
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp},{visitor_id},{visitor_name},{action}\n")

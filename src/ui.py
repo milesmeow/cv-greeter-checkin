@@ -6,9 +6,9 @@ Provides the greeter interface for checking in visitors.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import numpy as np
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 from datetime import datetime
 
 
@@ -26,7 +26,12 @@ class CheckInUI:
     def __init__(
         self,
         on_checkin: Callable[[], None],
-        on_close: Callable[[], None]
+        on_close: Callable[[], None],
+        on_get_visitors: Callable[[], List[dict]] = None,
+        on_delete_visitor: Callable[[int], bool] = None,
+        on_get_checkins: Callable[[], List[dict]] = None,
+        on_get_available_logs: Callable[[], List[str]] = None,
+        on_get_checkins_for_date: Callable[[str], List[dict]] = None
     ):
         """
         Initialize the UI.
@@ -34,14 +39,24 @@ class CheckInUI:
         Args:
             on_checkin: Callback when Check In button is clicked
             on_close: Callback when window is closed
+            on_get_visitors: Callback to get all registered visitors
+            on_delete_visitor: Callback to delete a visitor by ID
+            on_get_checkins: Callback to get today's check-ins
+            on_get_available_logs: Callback to get list of available log dates
+            on_get_checkins_for_date: Callback to get check-ins for a specific date
         """
         self.on_checkin = on_checkin
         self.on_close = on_close
+        self.on_get_visitors = on_get_visitors
+        self.on_delete_visitor = on_delete_visitor
+        self.on_get_checkins = on_get_checkins
+        self.on_get_available_logs = on_get_available_logs
+        self.on_get_checkins_for_date = on_get_checkins_for_date
 
         # Create main window
         self.root = tk.Tk()
         self.root.title("Visitor Check-In")
-        self.root.geometry("700x750")
+        self.root.geometry("800x800")
         self.root.resizable(True, True)
 
         # Handle window close
@@ -87,9 +102,54 @@ class CheckInUI:
     
     def _build_ui(self):
         """Construct all UI elements."""
-        # Create canvas with scrollbar for scrollable content
-        canvas = tk.Canvas(self.root)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        # Two-column layout: main content (centered) + admin sidebar (right)
+        content_frame = ttk.Frame(self.root)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Right sidebar for admin button
+        sidebar = ttk.Frame(content_frame, padding=10)
+        sidebar.pack(side=tk.RIGHT, fill=tk.Y, anchor=tk.N)
+
+        self.admin_btn = ttk.Button(
+            sidebar,
+            text="Manage\nVisitors",
+            style='Register.TButton',
+            command=self._show_admin_dialog
+        )
+        self.admin_btn.pack(anchor=tk.N)
+
+        self.history_btn = ttk.Button(
+            sidebar,
+            text="Today's\nCheck-ins",
+            style='Register.TButton',
+            command=self._show_history_dialog
+        )
+        self.history_btn.pack(anchor=tk.N, pady=(10, 0))
+
+        self.browse_btn = ttk.Button(
+            sidebar,
+            text="Browse\nHistory",
+            style='Register.TButton',
+            command=self._show_history_browser
+        )
+        self.browse_btn.pack(anchor=tk.N, pady=(10, 0))
+
+        # Spacer to push quit button to bottom
+        spacer = ttk.Frame(sidebar)
+        spacer.pack(fill=tk.Y, expand=True)
+
+        # Quit button at bottom
+        self.quit_btn = ttk.Button(
+            sidebar,
+            text="Quit",
+            style='Register.TButton',
+            command=self._handle_close
+        )
+        self.quit_btn.pack(anchor=tk.S, pady=(10, 0))
+
+        # Create canvas with scrollbar for scrollable main content
+        canvas = tk.Canvas(content_frame)
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)
 
         # Main container with padding (inside canvas)
         main_frame = ttk.Frame(canvas, padding=20)
@@ -119,17 +179,17 @@ class CheckInUI:
             style='Header.TLabel'
         )
         header.pack()
-        
+
         # Camera preview frame
         self.camera_frame = ttk.Frame(main_frame, relief='sunken', borderwidth=2)
         self.camera_frame.pack(pady=10)
-        
+
         self.camera_label = ttk.Label(self.camera_frame)
         self.camera_label.pack()
-        
+
         # Placeholder for camera
         self._show_placeholder()
-        
+
         # Check-in button
         self.checkin_btn = ttk.Button(
             main_frame,
@@ -138,7 +198,7 @@ class CheckInUI:
             command=self._handle_checkin
         )
         self.checkin_btn.pack(pady=15)
-        
+
         # Status display
         status_frame = ttk.Frame(main_frame, relief='groove', borderwidth=1)
         status_frame.pack(fill=tk.X, pady=10)
@@ -175,23 +235,78 @@ class CheckInUI:
         placeholder = Image.new('RGB', (640, 480), color=(200, 200, 200))
         self._current_frame = ImageTk.PhotoImage(placeholder)
         self.camera_label.configure(image=self._current_frame)
-    
+
+    def set_camera_status(self, status: str, status_type: str = "info"):
+        """
+        Show camera connection status on the preview.
+
+        Args:
+            status: Status message (e.g., "Connecting to camera...")
+            status_type: "info", "warning", or "error"
+        """
+        colors = {
+            "info": (80, 80, 80),
+            "warning": (180, 130, 40),
+            "error": (180, 50, 50)
+        }
+        text_color = colors.get(status_type, (80, 80, 80))
+
+        # Create image with status text
+        image = Image.new('RGB', (640, 480), color=(200, 200, 200))
+        draw = ImageDraw.Draw(image)
+
+        # Try to use a system font, fall back to default
+        font = None
+        font_paths = [
+            "/System/Library/Fonts/Helvetica.ttc",  # macOS
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+        ]
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, 24)
+                break
+            except (OSError, IOError):
+                continue
+
+        if font is None:
+            font = ImageFont.load_default()
+
+        # Center the text
+        bbox = draw.textbbox((0, 0), status, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (640 - text_width) // 2
+        y = (480 - text_height) // 2
+
+        draw.text((x, y), status, fill=text_color, font=font)
+
+        self._current_frame = ImageTk.PhotoImage(image)
+        self.camera_label.configure(image=self._current_frame)
+
     def update_camera_frame(self, frame: np.ndarray):
         """
         Update the camera preview with a new frame.
-        
+
         Args:
             frame: RGB image as numpy array
         """
-        # Convert to PIL Image
-        image = Image.fromarray(frame)
-        
-        # Resize if needed
-        image = image.resize((640, 480), Image.Resampling.LANCZOS)
-        
-        # Convert to PhotoImage for Tkinter
-        self._current_frame = ImageTk.PhotoImage(image)
-        self.camera_label.configure(image=self._current_frame)
+        try:
+            # Validate frame before processing
+            if frame is None or len(frame.shape) != 3:
+                return  # Skip invalid frames silently
+
+            # Convert to PIL Image
+            image = Image.fromarray(frame)
+
+            # Resize if needed
+            image = image.resize((640, 480), Image.Resampling.LANCZOS)
+
+            # Convert to PhotoImage for Tkinter
+            self._current_frame = ImageTk.PhotoImage(image)
+            self.camera_label.configure(image=self._current_frame)
+        except Exception as e:
+            print(f"Warning: Failed to update camera frame: {e}")
     
     def set_status(self, message: str, status_type: str = "info"):
         """
@@ -245,7 +360,33 @@ class CheckInUI:
         """Handle window close."""
         self.on_close()
         self.root.destroy()
-    
+
+    def _show_admin_dialog(self):
+        """Show the visitor management dialog."""
+        if self.on_get_visitors and self.on_delete_visitor:
+            AdminDialog(
+                parent=self.root,
+                on_get_visitors=self.on_get_visitors,
+                on_delete_visitor=self.on_delete_visitor
+            )
+
+    def _show_history_dialog(self):
+        """Show the check-in history dialog."""
+        if self.on_get_checkins:
+            CheckInHistoryDialog(
+                parent=self.root,
+                on_get_checkins=self.on_get_checkins
+            )
+
+    def _show_history_browser(self):
+        """Show the history browser dialog."""
+        if self.on_get_available_logs and self.on_get_checkins_for_date:
+            HistoryBrowserDialog(
+                parent=self.root,
+                on_get_available_logs=self.on_get_available_logs,
+                on_get_checkins_for_date=self.on_get_checkins_for_date
+            )
+
     def run(self):
         """Start the UI event loop."""
         self.root.mainloop()
@@ -374,9 +515,549 @@ class CheckInUI:
         # Cancel button
         def handle_cancel():
             dialog.destroy()
+            self.set_status("Ready - Click 'Check In' when visitor arrives", "info")
+
+        # Handle window close button (X)
+        dialog.protocol("WM_DELETE_WINDOW", handle_cancel)
 
         ttk.Button(
             frame,
             text="Cancel",
             command=handle_cancel
         ).pack(pady=(15, 0))
+
+
+class AdminDialog:
+    """
+    Modal dialog for managing registered visitors.
+
+    Displays a list of visitors with details and allows deletion.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_get_visitors: Callable[[], List[dict]],
+        on_delete_visitor: Callable[[int], bool]
+    ):
+        """
+        Initialize the admin dialog.
+
+        Args:
+            parent: Parent window
+            on_get_visitors: Callback to get visitor list
+            on_delete_visitor: Callback to delete a visitor by ID
+        """
+        self.on_get_visitors = on_get_visitors
+        self.on_delete_visitor = on_delete_visitor
+
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Manage Visitors")
+        self.dialog.geometry("600x400")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Center over parent
+        self.dialog.geometry(f"+{parent.winfo_x() + 50}+{parent.winfo_y() + 100}")
+
+        self._build_ui()
+        self._load_visitors()
+
+    def _build_ui(self):
+        """Construct the dialog UI."""
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header
+        ttk.Label(
+            main_frame,
+            text="Registered Visitors",
+            font=('Helvetica', 14, 'bold')
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        # Treeview frame (for scrollbar)
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Create Treeview with columns
+        columns = ('id', 'name', 'registered', 'last_seen', 'visits')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+
+        # Define headings
+        self.tree.heading('id', text='ID')
+        self.tree.heading('name', text='Name')
+        self.tree.heading('registered', text='Registered')
+        self.tree.heading('last_seen', text='Last Seen')
+        self.tree.heading('visits', text='Visits')
+
+        # Define column widths
+        self.tree.column('id', width=40, anchor='center')
+        self.tree.column('name', width=180)
+        self.tree.column('registered', width=120)
+        self.tree.column('last_seen', width=120)
+        self.tree.column('visits', width=60, anchor='center')
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        # Pack tree and scrollbar
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind selection event
+        self.tree.bind('<<TreeviewSelect>>', self._on_select)
+
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=('Helvetica', 10),
+            foreground='gray'
+        )
+        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+
+        # Button frame
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        # Delete button (disabled by default)
+        self.delete_btn = ttk.Button(
+            btn_frame,
+            text="Delete Selected",
+            command=self._on_delete,
+            state=tk.DISABLED
+        )
+        self.delete_btn.pack(side=tk.LEFT)
+
+        # Close button
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT)
+
+    def _load_visitors(self):
+        """Load visitors from database and populate the Treeview."""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Get visitors
+        visitors = self.on_get_visitors()
+
+        # Populate treeview
+        for visitor in visitors:
+            self.tree.insert('', tk.END, values=(
+                visitor['id'],
+                visitor['name'],
+                self._format_date(visitor['created_at']),
+                self._format_date(visitor['last_seen']),
+                visitor['visit_count']
+            ))
+
+        # Update status
+        count = len(visitors)
+        self.status_label.configure(
+            text=f"Total: {count} visitor{'s' if count != 1 else ''}"
+        )
+
+        # Reset delete button state
+        self.delete_btn.configure(state=tk.DISABLED)
+
+    def _format_date(self, date_str: str) -> str:
+        """Format a database timestamp for display."""
+        if not date_str:
+            return "Never"
+        try:
+            dt = datetime.fromisoformat(date_str)
+            today = datetime.now().date()
+            if dt.date() == today:
+                return "Today"
+            elif (today - dt.date()).days == 1:
+                return "Yesterday"
+            else:
+                return dt.strftime("%b %d, %Y")
+        except (ValueError, TypeError):
+            return str(date_str)
+
+    def _on_select(self, event):
+        """Handle Treeview selection change."""
+        selected = self.tree.selection()
+        if selected:
+            self.delete_btn.configure(state=tk.NORMAL)
+        else:
+            self.delete_btn.configure(state=tk.DISABLED)
+
+    def _on_delete(self):
+        """Handle delete button click."""
+        selected = self.tree.selection()
+        if not selected:
+            return
+
+        # Get visitor info
+        item = self.tree.item(selected[0])
+        values = item['values']
+        visitor_id = values[0]
+        visitor_name = values[1]
+
+        # Confirm deletion
+        if messagebox.askyesno(
+            "Confirm Delete",
+            f"Are you sure you want to delete '{visitor_name}'?\n\nThis cannot be undone.",
+            parent=self.dialog
+        ):
+            if self.on_delete_visitor(visitor_id):
+                self._load_visitors()  # Refresh list
+
+
+class CheckInHistoryDialog:
+    """
+    Modal dialog for viewing today's check-in history.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_get_checkins: Callable[[], List[dict]]
+    ):
+        """
+        Initialize the check-in history dialog.
+
+        Args:
+            parent: Parent window
+            on_get_checkins: Callback to get today's check-ins
+        """
+        self.on_get_checkins = on_get_checkins
+
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Today's Check-ins")
+        self.dialog.geometry("500x400")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Center over parent
+        self.dialog.geometry(f"+{parent.winfo_x() + 100}+{parent.winfo_y() + 100}")
+
+        self._build_ui()
+        self._load_checkins()
+
+    def _build_ui(self):
+        """Construct the dialog UI."""
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header with date
+        today = datetime.now().strftime("%A, %B %d, %Y")
+        ttk.Label(
+            main_frame,
+            text=f"Check-ins for {today}",
+            font=('Helvetica', 14, 'bold')
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        # Treeview frame (for scrollbar)
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Create Treeview with columns
+        columns = ('time', 'name', 'type')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+
+        # Define headings
+        self.tree.heading('time', text='Time')
+        self.tree.heading('name', text='Visitor')
+        self.tree.heading('type', text='Type')
+
+        # Define column widths
+        self.tree.column('time', width=100)
+        self.tree.column('name', width=200)
+        self.tree.column('type', width=120)
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        # Pack tree and scrollbar
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=('Helvetica', 10),
+            foreground='gray'
+        )
+        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+
+        # Button frame
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        # Close button
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT)
+
+    def _load_checkins(self):
+        """Load check-ins and populate the Treeview."""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Get check-ins
+        checkins = self.on_get_checkins()
+
+        # Populate treeview (most recent first)
+        for checkin in reversed(checkins):
+            # Format time from timestamp
+            time_str = self._format_time(checkin['timestamp'])
+            check_type = self._format_action(checkin['action'])
+
+            self.tree.insert('', tk.END, values=(
+                time_str,
+                checkin['visitor_name'],
+                check_type
+            ))
+
+        # Update status
+        count = len(checkins)
+        self.status_label.configure(
+            text=f"Total: {count} event{'s' if count != 1 else ''} today"
+        )
+
+    def _format_time(self, timestamp_str: str) -> str:
+        """Format a timestamp for display."""
+        try:
+            dt = datetime.fromisoformat(timestamp_str.replace(" ", "T"))
+            return dt.strftime("%I:%M %p")
+        except (ValueError, TypeError):
+            return timestamp_str
+
+    def _format_action(self, action: str) -> str:
+        """Format an action type for display."""
+        action_map = {
+            "checkin": "Check In",
+            "register": "Registered",
+            "delete": "Deleted"
+        }
+        return action_map.get(action, action.capitalize())
+
+
+class HistoryBrowserDialog:
+    """
+    Modal dialog for browsing historical check-in logs.
+    """
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        on_get_available_logs: Callable[[], List[str]],
+        on_get_checkins_for_date: Callable[[str], List[dict]]
+    ):
+        """
+        Initialize the history browser dialog.
+
+        Args:
+            parent: Parent window
+            on_get_available_logs: Callback to get list of available log dates
+            on_get_checkins_for_date: Callback to get check-ins for a specific date
+        """
+        self.on_get_available_logs = on_get_available_logs
+        self.on_get_checkins_for_date = on_get_checkins_for_date
+
+        # Create dialog window
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Browse Check-in History")
+        self.dialog.geometry("650x450")
+        self.dialog.resizable(True, True)
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Center over parent
+        self.dialog.geometry(f"+{parent.winfo_x() + 75}+{parent.winfo_y() + 75}")
+
+        self._build_ui()
+        self._load_available_dates()
+
+    def _build_ui(self):
+        """Construct the dialog UI."""
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=15)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header
+        ttk.Label(
+            main_frame,
+            text="Browse Check-in History",
+            font=('Helvetica', 14, 'bold')
+        ).pack(anchor=tk.W, pady=(0, 10))
+
+        # Content frame - two panes
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Left pane - date list
+        left_frame = ttk.Frame(content_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        ttk.Label(
+            left_frame,
+            text="Available Dates:",
+            font=('Helvetica', 10, 'bold')
+        ).pack(anchor=tk.W)
+
+        # Date listbox with scrollbar
+        date_frame = ttk.Frame(left_frame)
+        date_frame.pack(fill=tk.Y, expand=True, pady=(5, 0))
+
+        self.date_listbox = tk.Listbox(date_frame, width=15, height=15)
+        date_scrollbar = ttk.Scrollbar(date_frame, orient=tk.VERTICAL, command=self.date_listbox.yview)
+        self.date_listbox.configure(yscrollcommand=date_scrollbar.set)
+
+        self.date_listbox.pack(side=tk.LEFT, fill=tk.Y)
+        date_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind selection event
+        self.date_listbox.bind('<<ListboxSelect>>', self._on_date_select)
+
+        # Right pane - check-ins for selected date
+        right_frame = ttk.Frame(content_frame)
+        right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.date_label = ttk.Label(
+            right_frame,
+            text="Select a date to view check-ins",
+            font=('Helvetica', 10, 'bold')
+        )
+        self.date_label.pack(anchor=tk.W)
+
+        # Treeview for check-ins
+        tree_frame = ttk.Frame(right_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        columns = ('time', 'name', 'type')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=12)
+
+        self.tree.heading('time', text='Time')
+        self.tree.heading('name', text='Visitor')
+        self.tree.heading('type', text='Type')
+
+        self.tree.column('time', width=80)
+        self.tree.column('name', width=180)
+        self.tree.column('type', width=100)
+
+        tree_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scrollbar.set)
+
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Status label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=('Helvetica', 10),
+            foreground='gray'
+        )
+        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+
+        # Button frame
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+
+        ttk.Button(
+            btn_frame,
+            text="Close",
+            command=self.dialog.destroy
+        ).pack(side=tk.RIGHT)
+
+    def _load_available_dates(self):
+        """Load available log dates into the listbox."""
+        dates = self.on_get_available_logs()
+
+        self.date_listbox.delete(0, tk.END)
+        for date_str in dates:
+            # Format date for display
+            display_date = self._format_date_for_list(date_str)
+            self.date_listbox.insert(tk.END, display_date)
+
+        # Store the raw dates for lookup
+        self._date_map = {self._format_date_for_list(d): d for d in dates}
+
+        if not dates:
+            self.status_label.configure(text="No check-in logs found")
+
+    def _format_date_for_list(self, date_str: str) -> str:
+        """Format a date string for display in the list."""
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            return dt.strftime("%b %d, %Y")
+        except ValueError:
+            return date_str
+
+    def _on_date_select(self, event):
+        """Handle date selection."""
+        selection = self.date_listbox.curselection()
+        if not selection:
+            return
+
+        display_date = self.date_listbox.get(selection[0])
+        date_str = self._date_map.get(display_date, display_date)
+
+        # Update header
+        self.date_label.configure(text=f"Check-ins for {display_date}:")
+
+        # Load check-ins for this date
+        self._load_checkins_for_date(date_str)
+
+    def _load_checkins_for_date(self, date_str: str):
+        """Load check-ins for a specific date."""
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Get check-ins
+        checkins = self.on_get_checkins_for_date(date_str)
+
+        # Populate treeview (most recent first)
+        for checkin in reversed(checkins):
+            time_str = self._format_time(checkin['timestamp'])
+            check_type = self._format_action(checkin['action'])
+
+            self.tree.insert('', tk.END, values=(
+                time_str,
+                checkin['visitor_name'],
+                check_type
+            ))
+
+        # Update status
+        count = len(checkins)
+        self.status_label.configure(
+            text=f"Total: {count} event{'s' if count != 1 else ''}"
+        )
+
+    def _format_time(self, timestamp_str: str) -> str:
+        """Format a timestamp for display."""
+        try:
+            dt = datetime.fromisoformat(timestamp_str.replace(" ", "T"))
+            return dt.strftime("%I:%M %p")
+        except (ValueError, TypeError):
+            return timestamp_str
+
+    def _format_action(self, action: str) -> str:
+        """Format an action type for display."""
+        action_map = {
+            "checkin": "Check In",
+            "register": "Registered",
+            "delete": "Deleted"
+        }
+        return action_map.get(action, action.capitalize())

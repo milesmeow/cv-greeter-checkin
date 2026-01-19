@@ -32,7 +32,7 @@ The system starts empty. Visitors are added one at a time as they arrive and the
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    main.py                               │
-│                 (Application entry)                      │
+│            (Application entry + preview loop)            │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
@@ -41,12 +41,16 @@ The system starts empty. Visitors are added one at a time as they arrive and the
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
 │  │ Camera View │  │ Check-In Btn│  │ Result Display  │  │
 │  └─────────────┘  └─────────────┘  └─────────────────┘  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │Admin Sidebar│  │Modal Dialogs│  │ History Browser │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
 └─────────┬───────────────┬───────────────┬───────────────┘
           │               │               │
 ┌─────────▼───────┐ ┌─────▼─────┐ ┌───────▼───────┐
 │   camera.py     │ │recognition│ │  database.py  │
-│ (OpenCV capture)│ │   .py     │ │   (SQLite)    │
-└─────────────────┘ └───────────┘ └───────────────┘
+│  (State machine │ │   .py     │ │(SQLite + logs)│
+│   + warmup)     │ └───────────┘ └───────────────┘
+└─────────────────┘
 ```
 
 ## User Flow
@@ -75,6 +79,56 @@ Greeter clicks "Check In"
     → Log arrival to CSV
 ```
 
+## Admin Tools
+
+Three modal dialogs provide administrative functionality:
+
+### Manage Visitors (`AdminDialog`)
+- Displays all registered visitors in a table (ID, Name, Registered, Last Seen, Visits)
+- Delete selected visitor with confirmation
+- Callback-based data retrieval from main app
+
+### Today's Check-ins (`CheckInHistoryDialog`)
+- Shows today's activity chronologically (most recent first)
+- Displays time, visitor name, and action type
+- Read-only view
+
+### Browse History (`HistoryBrowserDialog`)
+- Two-pane interface: date list + check-ins for selected date
+- Lists all available log dates (newest first)
+- Click a date to see that day's check-ins
+
+### Modal Pattern
+All dialogs follow the same pattern:
+```python
+class SomeDialog(tk.Toplevel):
+    def __init__(self, parent, on_get_data: Callable):
+        super().__init__(parent)
+        self.transient(parent)  # Associate with parent
+        self.grab_set()         # Make modal
+        # Center over parent window
+        # Build UI with Treeview + scrollbar
+        # Use callback to fetch data
+```
+
+## Camera Initialization
+
+The camera uses a state machine for reliable startup:
+
+```
+CameraState:
+    DISCONNECTED → CONNECTING → WARMING_UP → READY
+                                           ↘ ERROR
+```
+
+**Warmup Logic:**
+- Waits for 3 consecutive successful frame reads
+- Up to 20 attempts with 100ms delays between attempts
+- Frame validation checks brightness and dimensions
+- Continues with graceful degradation if warmup incomplete
+
+This addresses camera quirks, especially on macOS where cameras need time to initialize.
+
 ## Database Schema
 
 ### visitors table
@@ -87,13 +141,16 @@ Greeter clicks "Check In"
 | last_seen | TIMESTAMP | Most recent check-in |
 | visit_count | INTEGER | Total visits |
 
-### Arrival Log (CSV)
+### Event Log (CSV)
+Daily logs stored in `data/logs/YYYY-MM-DD.csv`:
 ```
-timestamp,visitor_id,visitor_name,recognized
-2024-01-15 09:30:00,1,John Smith,true
-2024-01-15 09:45:00,2,Jane Doe,true
-2024-01-15 10:00:00,3,New Person,false
+timestamp,visitor_id,visitor_name,action
+2024-01-15 09:30:00,1,John Smith,checkin
+2024-01-15 09:45:00,2,Jane Doe,checkin
+2024-01-15 10:00:00,3,New Person,register
+2024-01-15 11:00:00,2,Jane Doe,delete
 ```
+Action types: `checkin` (returning visitor), `register` (new visitor), `delete` (visitor removed)
 
 ## Face Recognition Approach
 
@@ -119,35 +176,42 @@ is_match = distance[0] < 0.6
 ## UI Layout (Tkinter)
 
 ```
-┌─────────────────────────────────────────────┐
-│          Visitor Check-In System            │
-├─────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────┐    │
-│  │                                     │    │
-│  │         Camera Preview              │    │
-│  │         (640 x 480)                 │    │
-│  │                                     │    │
-│  └─────────────────────────────────────┘    │
-│                                             │
-│  ┌─────────────────────────────────────┐    │
-│  │         [  CHECK IN  ]              │    │
-│  └─────────────────────────────────────┘    │
-│                                             │
-│  ┌─────────────────────────────────────┐    │
-│  │  Status: Ready                      │    │
-│  │  Last Check-in: John Smith (9:30am) │    │
-│  └─────────────────────────────────────┘    │
-│                                             │
-│  ── New Visitor Registration ──             │
-│  Name: [________________]  [Register]       │
-│                                             │
-└─────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│              Visitor Check-In System                       │
+├───────────────┬───────────────────────────────────────────┤
+│               │  ┌─────────────────────────────────────┐  │
+│  Admin Tools  │  │                                     │  │
+│ ┌───────────┐ │  │         Camera Preview              │  │
+│ │  Manage   │ │  │         (640 x 480)                 │  │
+│ │ Visitors  │ │  │                                     │  │
+│ └───────────┘ │  └─────────────────────────────────────┘  │
+│ ┌───────────┐ │                                           │
+│ │  Today's  │ │  ┌─────────────────────────────────────┐  │
+│ │ Check-ins │ │  │         [  CHECK IN  ]              │  │
+│ └───────────┘ │  └─────────────────────────────────────┘  │
+│ ┌───────────┐ │                                           │
+│ │  Browse   │ │  ┌─────────────────────────────────────┐  │
+│ │  History  │ │  │  Status: Ready                      │  │
+│ └───────────┘ │  │  Last Check-in: John Smith (9:30am) │  │
+│               │  └─────────────────────────────────────┘  │
+│               │                                           │
+│               │  ── New Visitor Registration ──           │
+│               │  Name: [________________]  [Register]     │
+│               │                                           │
+└───────────────┴───────────────────────────────────────────┘
 ```
 
 ## Common Tasks for Claude Code
 
+### "Add a new admin dialog"
+1. Create a new class extending `tk.Toplevel` in `src/ui.py`
+2. Follow the modal pattern (see AdminDialog, CheckInHistoryDialog, HistoryBrowserDialog)
+3. Add callback parameter for data operations
+4. Add button in sidebar (`_build_sidebar()`)
+5. Wire up callback in `main.py` (add to CheckInApp and pass to CheckInUI)
+
 ### "Add a feature to export attendance"
-- Add export button to UI
+- Add export button to admin sidebar or history browser
 - Read from CSV logs in data/logs/
 - Format as Excel or PDF
 
@@ -158,11 +222,12 @@ is_match = distance[0] < 0.6
 
 ### "Add visitor notes"
 - Add notes column to database
-- Add text field in UI for viewing/editing notes
+- Add text field in AdminDialog for viewing/editing notes
 - Show notes when visitor is recognized
 
 ### "Make it work with multiple cameras"
 - Modify camera.py to enumerate available cameras
+- Update CameraState to handle multiple cameras
 - Add camera selector dropdown in UI
 
 ## Testing

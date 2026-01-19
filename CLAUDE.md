@@ -28,10 +28,10 @@ visitor-checkin/
 ├── README.md           # User-facing documentation
 │
 ├── src/
-│   ├── camera.py       # Webcam capture (OpenCV)
+│   ├── camera.py       # Webcam capture with state machine & retry logic
 │   ├── recognition.py  # Face detection & matching
-│   ├── database.py     # SQLite + CSV logging
-│   └── ui.py           # Tkinter interface
+│   ├── database.py     # SQLite + CSV logging (incl. deletion events)
+│   └── ui.py           # Tkinter interface + admin modal dialogs
 │
 ├── data/               # Created at runtime
 │   ├── visitors.db     # SQLite database
@@ -98,6 +98,29 @@ User clicks "Check In"
     → database.py logs the visit
 ```
 
+### Camera State Machine
+The camera uses a state machine for reliable initialization:
+```
+CameraState: DISCONNECTED → CONNECTING → WARMING_UP → READY
+                                                    ↘ ERROR
+```
+- **Warmup phase**: Requires 3 consecutive successful frame reads before marking ready
+- **Retry logic**: Up to 20 attempts with 100ms delays (helps with macOS camera quirks)
+- **Frame validation**: Checks brightness, dimensions, and validity before display/processing
+- **Graceful degradation**: Continues even if warmup incomplete
+
+### Admin Tools
+Three modal dialogs accessible from the sidebar:
+- **Manage Visitors** (`AdminDialog`): View/delete registered visitors
+- **Today's Check-ins** (`CheckInHistoryDialog`): View today's activity
+- **Browse History** (`HistoryBrowserDialog`): Browse check-ins by date
+
+### Modal Architecture
+All modals follow a consistent pattern:
+- Use `tk.Toplevel()` with `transient()` and `grab_set()` for modal behavior
+- Callback-based data retrieval from main app
+- Auto-center over parent window
+
 ### Face Encodings
 - 128-dimensional numpy arrays
 - Stored as pickled BLOBs in SQLite
@@ -121,6 +144,13 @@ visitors (
 ### Add a new feature to the UI
 Edit `src/ui.py`. The main class is `CheckInUI`. Add new widgets in `_build_ui()` method.
 
+### Add a new admin dialog
+1. Create a new class inheriting from `tk.Toplevel` in `src/ui.py`
+2. Follow the modal pattern: `transient(parent)`, `grab_set()`, center over parent
+3. Add callback parameter for data retrieval
+4. Add button in sidebar (`_build_sidebar()`) to open the dialog
+5. Wire up the callback in `main.py`
+
 ### Change recognition sensitivity
 In `src/recognition.py`, adjust `tolerance` parameter in `FaceRecognizer.__init__()`. Lower = stricter matching.
 
@@ -132,8 +162,9 @@ In `src/recognition.py`, adjust `tolerance` parameter in `FaceRecognizer.__init_
 ### Export attendance data
 The `AttendanceLogger` class in `database.py` writes daily CSVs to `data/logs/`. Format:
 ```
-timestamp,visitor_id,visitor_name,recognized
+timestamp,visitor_id,visitor_name,action
 ```
+Action types: `checkin`, `register`, `delete`
 
 ### Test without a camera
 Mock the camera in tests or use static images:
@@ -158,23 +189,25 @@ image = face_recognition.load_image_file("test_photo.jpg")
 
 ## Future Enhancements (if user requests)
 
-- Visitor list view / admin panel
 - Multiple camera support
 - Attendance reports / Excel export
 - Visitor photos (optional)
 - Kiosk mode (auto-scan)
 - Sound notifications
 - Adjustable tolerance slider in UI
+- Visitor notes/tags
 
 ## Troubleshooting
 
 ### "No module named 'face_recognition'"
 Install failed. Check C++ compiler and cmake are installed, then retry pip install.
 
-### "Could not open camera"
+### "Could not open camera" / Camera black screen
 - Check camera permissions (especially macOS)
 - Try different camera_index in Camera() constructor
 - Close other apps using the camera
+- The camera has built-in warmup logic - wait for "READY" state
+- Check debug output for frame validation failures
 
 ### Recognition too strict/lenient
 Adjust tolerance in `FaceRecognizer(tolerance=0.6)`. Range 0.4-0.8 typical.
@@ -187,9 +220,13 @@ Adjust tolerance in `FaceRecognizer(tolerance=0.6)`. Range 0.4-0.8 typical.
 ## Testing Checklist
 
 Before deploying:
-- [ ] Camera preview works
+- [ ] Camera preview works (waits for warmup)
 - [ ] Can register a new visitor
 - [ ] Recognizes registered visitor on return
 - [ ] Attendance log CSV is created
 - [ ] App closes cleanly
 - [ ] Works after restart (database persists)
+- [ ] Admin: Can view visitor list
+- [ ] Admin: Can delete a visitor
+- [ ] Admin: Can view today's check-ins
+- [ ] Admin: Can browse history by date

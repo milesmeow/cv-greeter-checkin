@@ -20,6 +20,7 @@ from src.camera import Camera, CameraState
 from src.recognition import FaceRecognizer, draw_face_box
 from src.database import VisitorDatabase, AttendanceLogger
 from src.ui import CheckInUI
+from src.version import __version__
 
 
 class CheckInApp:
@@ -47,7 +48,8 @@ class CheckInApp:
             on_delete_visitor=self.delete_visitor,
             on_get_checkins=self.get_checkins,
             on_get_available_logs=self.get_available_logs,
-            on_get_checkins_for_date=self.get_checkins_for_date
+            on_get_checkins_for_date=self.get_checkins_for_date,
+            version=__version__
         )
         
         # Start camera

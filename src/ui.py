@@ -31,7 +31,8 @@ class CheckInUI:
         on_delete_visitor: Callable[[int], bool] = None,
         on_get_checkins: Callable[[], List[dict]] = None,
         on_get_available_logs: Callable[[], List[str]] = None,
-        on_get_checkins_for_date: Callable[[str], List[dict]] = None
+        on_get_checkins_for_date: Callable[[str], List[dict]] = None,
+        version: str = "0.0.0"
     ):
         """
         Initialize the UI.
@@ -44,6 +45,7 @@ class CheckInUI:
             on_get_checkins: Callback to get today's check-ins
             on_get_available_logs: Callback to get list of available log dates
             on_get_checkins_for_date: Callback to get check-ins for a specific date
+            version: Application version string to display
         """
         self.on_checkin = on_checkin
         self.on_close = on_close
@@ -52,6 +54,7 @@ class CheckInUI:
         self.on_get_checkins = on_get_checkins
         self.on_get_available_logs = on_get_available_logs
         self.on_get_checkins_for_date = on_get_checkins_for_date
+        self.version = version
 
         # Create main window
         self.root = tk.Tk()
@@ -146,6 +149,15 @@ class CheckInUI:
             command=self._handle_close
         )
         self.quit_btn.pack(anchor=tk.S, pady=(10, 0))
+
+        # Version label at very bottom
+        version_label = ttk.Label(
+            sidebar,
+            text=f"v{self.version}",
+            font=('Helvetica', 9),
+            foreground='#888888'
+        )
+        version_label.pack(anchor=tk.S, pady=(10, 0))
 
         # Create canvas with scrollbar for scrollable main content
         canvas = tk.Canvas(content_frame)

@@ -460,6 +460,10 @@ class CheckInUI:
         # Cancel button
         def handle_cancel():
             dialog.destroy()
+            self.set_status("Ready - Click 'Check In' when visitor arrives", "info")
+
+        # Handle window close button (X)
+        dialog.protocol("WM_DELETE_WINDOW", handle_cancel)
 
         ttk.Button(
             frame,
@@ -761,7 +765,7 @@ class CheckInHistoryDialog:
         for checkin in reversed(checkins):
             # Format time from timestamp
             time_str = self._format_time(checkin['timestamp'])
-            check_type = "Check In" if checkin['recognized'] else "Registered"
+            check_type = self._format_action(checkin['action'])
 
             self.tree.insert('', tk.END, values=(
                 time_str,
@@ -772,7 +776,7 @@ class CheckInHistoryDialog:
         # Update status
         count = len(checkins)
         self.status_label.configure(
-            text=f"Total: {count} check-in{'s' if count != 1 else ''} today"
+            text=f"Total: {count} event{'s' if count != 1 else ''} today"
         )
 
     def _format_time(self, timestamp_str: str) -> str:
@@ -782,6 +786,15 @@ class CheckInHistoryDialog:
             return dt.strftime("%I:%M %p")
         except (ValueError, TypeError):
             return timestamp_str
+
+    def _format_action(self, action: str) -> str:
+        """Format an action type for display."""
+        action_map = {
+            "checkin": "Check In",
+            "register": "Registered",
+            "delete": "Deleted"
+        }
+        return action_map.get(action, action.capitalize())
 
 
 class HistoryBrowserDialog:
@@ -963,7 +976,7 @@ class HistoryBrowserDialog:
         # Populate treeview (most recent first)
         for checkin in reversed(checkins):
             time_str = self._format_time(checkin['timestamp'])
-            check_type = "Check In" if checkin['recognized'] else "Registered"
+            check_type = self._format_action(checkin['action'])
 
             self.tree.insert('', tk.END, values=(
                 time_str,
@@ -974,7 +987,7 @@ class HistoryBrowserDialog:
         # Update status
         count = len(checkins)
         self.status_label.configure(
-            text=f"Total: {count} check-in{'s' if count != 1 else ''}"
+            text=f"Total: {count} event{'s' if count != 1 else ''}"
         )
 
     def _format_time(self, timestamp_str: str) -> str:
@@ -984,3 +997,12 @@ class HistoryBrowserDialog:
             return dt.strftime("%I:%M %p")
         except (ValueError, TypeError):
             return timestamp_str
+
+    def _format_action(self, action: str) -> str:
+        """Format an action type for display."""
+        action_map = {
+            "checkin": "Check In",
+            "register": "Registered",
+            "delete": "Deleted"
+        }
+        return action_map.get(action, action.capitalize())

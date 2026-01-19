@@ -198,20 +198,27 @@ class CheckInApp:
         """
         return self.database.get_all_visitors()
 
-    def delete_visitor(self, visitor_id: int) -> bool:
+    def delete_visitor(self, visitor_id: int, visitor_name: str = None) -> bool:
         """
         Delete a visitor from the database.
 
         Args:
             visitor_id: The visitor's database ID
+            visitor_name: The visitor's name (for logging)
 
         Returns:
             True if deleted successfully
         """
+        # Get visitor name for logging if not provided
+        if visitor_name is None:
+            visitor = self.database.get_visitor(visitor_id)
+            visitor_name = visitor['name'] if visitor else f"Unknown (ID: {visitor_id})"
+
         result = self.database.delete_visitor(visitor_id)
         if result:
+            self.logger.log_deletion(visitor_id, visitor_name)
             self._update_stats()
-            print(f"Deleted visitor ID: {visitor_id}")
+            print(f"Deleted visitor: {visitor_name} (ID: {visitor_id})")
         return result
 
     def get_checkins(self) -> list:

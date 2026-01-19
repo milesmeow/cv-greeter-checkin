@@ -180,23 +180,14 @@ class AttendanceLogger:
     def log_checkin(self, visitor_id: int, visitor_name: str, recognized: bool):
         """
         Log a check-in event.
-        
+
         Args:
             visitor_id: The visitor's database ID
             visitor_name: The visitor's name
             recognized: Whether this was a recognized visitor or new registration
         """
-        log_path = self._get_log_path()
-        
-        # Write header if new file
-        write_header = not log_path.exists()
-        
-        with open(log_path, "a") as f:
-            if write_header:
-                f.write("timestamp,visitor_id,visitor_name,recognized\n")
-            
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"{timestamp},{visitor_id},{visitor_name},{recognized}\n")
+        action = "checkin" if recognized else "register"
+        self._log_event(visitor_id, visitor_name, action)
     
     def get_today_checkins(self) -> List[dict]:
         """
@@ -258,7 +249,38 @@ class AttendanceLogger:
                         "timestamp": parts[0],
                         "visitor_id": int(parts[1]),
                         "visitor_name": parts[2],
-                        "recognized": parts[3].lower() == "true"
+                        "action": parts[3]
                     })
 
         return checkins
+
+    def log_deletion(self, visitor_id: int, visitor_name: str):
+        """
+        Log a visitor deletion event.
+
+        Args:
+            visitor_id: The deleted visitor's database ID
+            visitor_name: The deleted visitor's name
+        """
+        self._log_event(visitor_id, visitor_name, "delete")
+
+    def _log_event(self, visitor_id: int, visitor_name: str, action: str):
+        """
+        Log an event to the daily attendance log.
+
+        Args:
+            visitor_id: The visitor's database ID
+            visitor_name: The visitor's name
+            action: The action type (checkin, register, delete)
+        """
+        log_path = self._get_log_path()
+
+        # Write header if new file
+        write_header = not log_path.exists()
+
+        with open(log_path, "a") as f:
+            if write_header:
+                f.write("timestamp,visitor_id,visitor_name,action\n")
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp},{visitor_id},{visitor_name},{action}\n")
